@@ -55,6 +55,7 @@
 #include <ATEMmin.h>
 #include <TallyServer.h>
 #include <FastLED.h>
+#include "FastLED_RGBW.h"
 
 #if ESP32
 //Define LED1 color pins
@@ -140,7 +141,7 @@ CRGB color_led[8] = { CRGB::Black, CRGB::Red, CRGB::Lime, CRGB::Blue, CRGB::Yell
 //FastLED
 #ifndef TALLY_DATA_PIN
 #if ESP32
-#define TALLY_DATA_PIN    12
+#define TALLY_DATA_PIN    6
 #elif ARDUINO_ESP8266_NODEMCU
 #define TALLY_DATA_PIN    7
 #else
@@ -149,9 +150,10 @@ CRGB color_led[8] = { CRGB::Black, CRGB::Red, CRGB::Lime, CRGB::Blue, CRGB::Yell
 #endif
 int numTallyLEDs;
 int numStatusLEDs;
-CRGB *leds;
-CRGB *tallyLEDs;
-CRGB *statusLED;
+CRGBW leds[13];
+CRGB* ledsRGB = (CRGB *) &leds[0];
+CRGBW *tallyLEDs;
+CRGBW *statusLED;
 bool neopixelsUpdated = false;
 
 //Initialize global variables
@@ -216,20 +218,6 @@ void onImprovWiFiConnectedCb(const char *ssid, const char *password)
 
 //Perform initial setup on power on
 void setup() {
-    //Init pins for LED
-    pinMode(PIN_RED1, OUTPUT);
-    pinMode(PIN_GREEN1, OUTPUT);
-    pinMode(PIN_BLUE1, OUTPUT);
-
-    pinMode(PIN_RED2, OUTPUT);
-    pinMode(PIN_GREEN2, OUTPUT);
-    pinMode(PIN_BLUE2, OUTPUT);
-
-    setBothLEDs(LED_BLUE);
-    //Setup current-measuring pin - Commented out for users without batteries
-    // pinMode(A0, INPUT);
-
-    //Start Serial
     Serial.begin(115200);
     Serial.println("########################");
     Serial.println("Serial started");
@@ -240,24 +228,29 @@ void setup() {
 
     //Initialize LED strip
     if (0 < settings.neopixelsAmount && settings.neopixelsAmount <= 1000) {
-        leds = new CRGB[settings.neopixelsAmount];
-        FastLED.addLeds<NEOPIXEL, TALLY_DATA_PIN>(leds, settings.neopixelsAmount);
+        FastLED.addLeds<WS2812B, TALLY_DATA_PIN, RGB>(ledsRGB, getRGBWsize(12));
+        FastLED.addLeds<NEOPIXEL, PIN_NEOPIXEL>(((CRGB *) &leds[12]), getRGBWsize(1));
 
-        if (settings.neopixelStatusLEDOption != NEOPIXEL_STATUS_NONE) {
-            numStatusLEDs = 1;
-            numTallyLEDs = settings.neopixelsAmount - numStatusLEDs;
-            if (settings.neopixelStatusLEDOption == NEOPIXEL_STATUS_FIRST) {
-                statusLED = leds;
-                tallyLEDs = leds + numStatusLEDs;
-            } else { // if last or or other value
-                statusLED = leds + numTallyLEDs;
-                tallyLEDs = leds;
-            }
-        } else {
-            numTallyLEDs = settings.neopixelsAmount;
-            numStatusLEDs = 0;
-            tallyLEDs = leds;
-        }
+        numStatusLEDs = 1;
+        numTallyLEDs = 12;
+
+        statusLED = leds + 12;
+        tallyLEDs = leds;
+        // if (settings.neopixelStatusLEDOption != NEOPIXEL_STATUS_NONE) {
+        //     numStatusLEDs = 1;
+        //     numTallyLEDs = settings.neopixelsAmount - numStatusLEDs;
+        //     if (settings.neopixelStatusLEDOption == NEOPIXEL_STATUS_FIRST) {
+        //         statusLED = leds;
+        //         tallyLEDs = leds + numStatusLEDs;
+        //     } else { // if last or or other value
+        //         statusLED = leds + numTallyLEDs;
+        //         tallyLEDs = leds;
+        //     }
+        // } else {
+        //     numTallyLEDs = settings.neopixelsAmount;
+        //     numStatusLEDs = 0;
+        //     tallyLEDs = leds;
+        // }
     } else {
         settings.neopixelsAmount = 0;
         numTallyLEDs = 0;
@@ -265,7 +258,7 @@ void setup() {
     }
 
     FastLED.setBrightness(settings.neopixelBrightness);
-    setSTRIP(LED_OFF);
+    setSTRIP(LED_BLUE);
     setStatusLED(LED_BLUE);
     FastLED.show();
 
@@ -349,7 +342,7 @@ void loop() {
                 Serial.println("Unable to connect. Serving \"Tally Light setup\" WiFi for configuration, while still trying to connect...");
                 WiFi.softAP((String)DISPLAY_NAME + " setup");
                 WiFi.mode(WIFI_AP_STA); // Enable softAP to access web interface in case of no WiFi
-                setBothLEDs(LED_WHITE);
+                setSTRIP(LED_WHITE);
                 setStatusLED(LED_WHITE);
             }
             break;
@@ -427,11 +420,7 @@ void loop() {
 
             //Set LED and Neopixel colors accordingly
             int color = getLedColor(settings.tallyModeLED1, settings.tallyNo);
-            setLED1(color);
-            setSTRIP(color);
-
-            color = getLedColor(settings.tallyModeLED2, settings.tallyNo);
-            setLED2(color);
+            if (((STATE_CONNECTING_TO_WIFI | STATE_CONNECTING_TO_SWITCHER) & state) != 0) setSTRIP(color);
 
             //Commented out for userst without batteries - Also timer is not done properly
             // batteryLoop();
@@ -473,128 +462,19 @@ void changeState(uint8_t stateToChangeTo) {
     switch (stateToChangeTo) {
         case STATE_CONNECTING_TO_WIFI:
             state = STATE_CONNECTING_TO_WIFI;
-            setBothLEDs(LED_BLUE);
             setStatusLED(LED_BLUE);
-            setSTRIP(LED_OFF);
+            setSTRIP(LED_BLUE);
             break;
         case STATE_CONNECTING_TO_SWITCHER:
             state = STATE_CONNECTING_TO_SWITCHER;
-            setBothLEDs(LED_PINK);
             setStatusLED(LED_PINK);
-            setSTRIP(LED_OFF);
+            setSTRIP(LED_PINK);
             break;
         case STATE_RUNNING:
             state = STATE_RUNNING;
-            setBothLEDs(LED_GREEN);
             setStatusLED(LED_ORANGE);
             break;
     }
-}
-
-//Set the color of both LEDs
-void setBothLEDs(uint8_t color) {
-    setLED(color, PIN_RED1, PIN_GREEN1, PIN_BLUE1);
-    setLED(color, PIN_RED2, PIN_GREEN2, PIN_BLUE2);
-}
-
-//Set the color of the 1st LED
-void setLED1(uint8_t color) {
-    setLED(color, PIN_RED1, PIN_GREEN1, PIN_BLUE1);
-}
-
-//Set the color of the 2nd LED
-void setLED2(uint8_t color) {
-    setLED(color, PIN_RED2, PIN_GREEN2, PIN_BLUE2);
-}
-
-//Set the color of a LED using the given pins
-void setLED(uint8_t color, int pinRed, int pinGreen, int pinBlue) {
-#if ESP32
-    switch (color) {
-        case LED_OFF:
-            digitalWrite(pinRed, 0);
-            digitalWrite(pinGreen, 0);
-            digitalWrite(pinBlue, 0);
-            break;
-        case LED_RED:
-            digitalWrite(pinRed, 1);
-            digitalWrite(pinGreen, 0);
-            digitalWrite(pinBlue, 0);
-            break;
-        case LED_GREEN:
-            digitalWrite(pinRed, 0);
-            digitalWrite(pinGreen, 1);
-            digitalWrite(pinBlue, 0);
-            break;
-        case LED_BLUE:
-            digitalWrite(pinRed, 0);
-            digitalWrite(pinGreen, 0);
-            digitalWrite(pinBlue, 1);
-            break;
-        case LED_YELLOW:
-            digitalWrite(pinRed, 1);
-            digitalWrite(pinGreen, 1);
-            digitalWrite(pinBlue, 0);
-            break;
-        case LED_PINK:
-            digitalWrite(pinRed, 1);
-            digitalWrite(pinGreen, 0);
-            digitalWrite(pinBlue, 1);
-            break;
-        case LED_WHITE:
-            digitalWrite(pinRed, 1);
-            digitalWrite(pinGreen, 1);
-            digitalWrite(pinBlue, 1);
-            break;
-    }
-#else
-    uint8_t ledBrightness = settings.ledBrightness;
-    void (*writeFunc)(uint8_t, uint8_t);
-    if(ledBrightness >= 0xff) {
-        writeFunc = &digitalWrite;
-        ledBrightness = 1;
-    } else {
-        writeFunc = &analogWriteWrapper;
-    }
-
-    switch (color) {
-        case LED_OFF:
-            digitalWrite(pinRed, 0);
-            digitalWrite(pinGreen, 0);
-            digitalWrite(pinBlue, 0);
-            break;
-        case LED_RED:
-            writeFunc(pinRed, ledBrightness);
-            digitalWrite(pinGreen, 0);
-            digitalWrite(pinBlue, 0);
-            break;
-        case LED_GREEN:
-            digitalWrite(pinRed, 0);
-            writeFunc(pinGreen, ledBrightness);
-            digitalWrite(pinBlue, 0);
-            break;
-        case LED_BLUE:
-            digitalWrite(pinRed, 0);
-            digitalWrite(pinGreen, 0);
-            writeFunc(pinBlue, ledBrightness);
-            break;
-        case LED_YELLOW:
-            writeFunc(pinRed, ledBrightness);
-            writeFunc(pinGreen, ledBrightness);
-            digitalWrite(pinBlue, 0);
-            break;
-        case LED_PINK:
-            writeFunc(pinRed, ledBrightness);
-            digitalWrite(pinGreen, 0);
-            writeFunc(pinBlue, ledBrightness);
-            break;
-        case LED_WHITE:
-            writeFunc(pinRed, ledBrightness);
-            writeFunc(pinGreen, ledBrightness);
-            writeFunc(pinBlue, ledBrightness);
-            break;
-    }
-#endif
 }
 
 void analogWriteWrapper(uint8_t pin, uint8_t value) {
@@ -620,11 +500,6 @@ void setStatusLED(uint8_t color) {
     if (numStatusLEDs > 0 && statusLED[0] != color_led[color]) {
         for (int i = 0; i < numStatusLEDs; i++) {
             statusLED[i] = color_led[color];
-            if (color == LED_ORANGE) {
-                statusLED[i].fadeToBlackBy(230);
-            } else {
-                statusLED[i].fadeToBlackBy(0);
-            }
         }
         neopixelsUpdated = true;
 #ifdef DEBUG_LED_STRIP
